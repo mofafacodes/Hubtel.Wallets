@@ -8,7 +8,7 @@ namespace Hubtel.Wallets.Utilities
 {
     public static class Helpers
     {
-        private static readonly Regex OwnerPhoneNumberPattern = new Regex(@"^\+(?:[0-9] ?){6,14}[0-9]$");
+        private static readonly Regex OwnerPhoneNumberPattern = new Regex(@"^(?:[0-9] ?){6,14}[0-9]$");
 
         public static bool PhoneNumberValidator(string phoneNumber)
         {

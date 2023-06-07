@@ -44,9 +44,9 @@ namespace Hubtel.Wallets
 
             //would be temporarily used but swapped out for a peristent DB
             //services.AddScoped<IWalletRepo, MockWalletRepo>();
-            services.AddScoped<IWalletRepo, SqlWalletRepo>();
+            //services.AddScoped<IWalletRepo, SqlWalletRepo>();
             //add async version
-            //services.AddScoped<IWalletRepoAsync, SqlWalletRepoAsync>();
+            services.AddScoped<IWalletRepoAsync, SqlWalletRepoAsync>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

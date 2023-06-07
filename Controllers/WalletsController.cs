@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using FluentValidation;
 using Hubtel.Wallets.Data;
 using Hubtel.Wallets.Dtos;
 using Hubtel.Wallets.Interfaces;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Hubtel.Wallets.Controllers
 {
@@ -18,16 +20,17 @@ namespace Hubtel.Wallets.Controllers
     public class WalletsController : ControllerBase
     {
         //private readonly MockWalletRepo _mockWalletRepo = new MockWalletRepo();
-        private readonly IWalletRepo _repository;
+        private readonly IWalletRepoAsync _repository;
         private readonly IMapper _mapper;
+        private readonly IValidator<WalletCreateDto> _validator;
 
         //dependency injected the Iwallet Repostory
-        public WalletsController(IWalletRepo respository, IMapper mapper)
+        public WalletsController(IWalletRepoAsync respository, IMapper mapper, IValidator<WalletCreateDto> validator )
         {
             _repository = respository;
             _mapper = mapper;
+            _validator = validator;
         }
-
 
         //POST api/wallets/create
         /// <summary>
@@ -36,39 +39,57 @@ namespace Hubtel.Wallets.Controllers
         /// <param name="wallet">The wallet model to create.</param>
         /// <returns>The created wallet.</returns>
         [HttpPost("create")]
-        public ActionResult<WalletReadDto> CreateWallet( [FromBody] WalletCreateDto wallet)
+        public async Task<ActionResult<WalletReadDto>> CreateWallet([FromBody] WalletCreateDto wallet)
         {
-            var ownerWallets = _repository.GetAllWalletsByOwner(wallet.OwnerPhoneNumber);
+            var validateResult = await _validator.ValidateAsync(wallet);
+
+            if (!validateResult.IsValid)
+            {
+                return BadRequest(validateResult.Errors);
+            }
+
+            var ownerWallets = await _repository.GetAllWalletsByOwnerAsync(wallet.OwnerPhoneNumber);
+
             if (ownerWallets.Count() >= 5)
             {
-                return BadRequest("You have a limit of 5 wallets. You cannot additional wallets at this time.");
+                return BadRequest("You have a limit of 5 wallets. You cannot add additional wallets at this time.");
             }
-            var allWallets = _repository.GetAllWalletsByAdmin();
 
-            WalletModel existingAccountNumber = new WalletModel();
-            if(wallet.Type == "momo")
+            if (ownerWallets.Count() > 1)
+            {
+                foreach (var item in ownerWallets)
+                {
+                    if (item.Name != wallet.Name)
+                    {
+                        return BadRequest("Wallet name should be the same for all wallets.");
+                    }
+                }
+            }
+
+            var allWallets = await _repository.GetAllWalletsByAdminAsync();
+
+            WalletModel existingAccountNumber = null;
+            if (wallet.Type == "momo")
             {
                 existingAccountNumber = allWallets.FirstOrDefault(x => x.AccountNumber == wallet.AccountNumber);
             }
-            if (wallet.Type == "card")
+            else if (wallet.Type == "card")
             {
                 existingAccountNumber = allWallets.FirstOrDefault(x => x.AccountNumber == Helpers.HashBankCard(wallet.AccountNumber));
             }
 
             if (existingAccountNumber != null)
             {
-                return BadRequest("A wallet with the this account number already exists.");
+                return BadRequest("A wallet with this account number already exists.");
             }
 
             WalletModel newWalletItem = new WalletModel();
 
-
-            if(wallet.Type == "momo")
+            if (wallet.Type == "momo")
             {
                 newWalletItem.AccountNumber = wallet.AccountNumber;
             }
-
-            if (wallet.Type == "card")
+            else if (wallet.Type == "card")
             {
                 newWalletItem.AccountNumber = Helpers.HashBankCard(wallet.AccountNumber);
             }
@@ -81,13 +102,12 @@ namespace Hubtel.Wallets.Controllers
             newWalletItem.UpdatedAt = DateTimeOffset.UtcNow;
 
             var walletCreateDto = _mapper.Map<WalletModel>(newWalletItem);
-            _repository.CreateWallet(walletCreateDto);
-            _repository.SaveChanges();
+            await _repository.CreateWalletAsync(walletCreateDto);
+            await _repository.SaveChangesAsync();
 
             var walletReadDto = _mapper.Map<WalletReadDto>(walletCreateDto);
 
-            return CreatedAtRoute(nameof(GetWalletById), new {Id = walletReadDto.Id}, walletReadDto);
-
+            return CreatedAtRoute(nameof(GetWalletByIdAsync), new { Id = walletReadDto.Id }, walletReadDto);
         }
 
         //GET api/wallets/{id}
@@ -96,10 +116,10 @@ namespace Hubtel.Wallets.Controllers
         /// </summary>
         /// <param name="id">The ID of the wallet to retrieve.</param>
         /// <returns>The wallet with the specified ID.</returns>
-        [HttpGet("{id}", Name = "GetWalletById")]
-        public ActionResult<WalletReadDto> GetWalletById( [FromRoute] int id)
+        [HttpGet("{id}", Name = "GetWalletByIdAsync")]
+        public async Task<ActionResult<WalletReadDto>> GetWalletByIdAsync([FromRoute] int id)
         {
-            var wallet = _repository.GetWalletById(id);
+            var wallet = await _repository.GetWalletByIdAsync(id);
             if (wallet == null)
             {
                 return NotFound();
@@ -115,27 +135,27 @@ namespace Hubtel.Wallets.Controllers
         /// <param name="wallet">The updated wallet data.</param>
         /// <returns>The updated wallet.</returns>
         [HttpPut("{id}")]
-        public ActionResult UpdateWallet( [FromRoute] int id, [FromBody] WalletUpdateDto wallet)
+        public async Task<ActionResult> UpdateWalletAsync([FromRoute] int id, [FromBody] WalletUpdateDto wallet)
         {
-            var walletFromRepo = _repository.GetWalletById(id);
-            if(walletFromRepo == null) 
+            var walletFromRepo = await _repository.GetWalletByIdAsync(id);
+            if (walletFromRepo == null)
             {
                 return NotFound();
             }
-            var allWallets = _repository.GetAllWalletsByAdmin();
+            var allWallets = await _repository.GetAllWalletsByAdminAsync();
 
-            WalletModel existingAccountNumber = new WalletModel();
+            WalletModel existingAccountNumber = null;
             if (wallet.Type == "momo")
             {
                 existingAccountNumber = allWallets.FirstOrDefault(x => x.AccountNumber == wallet.AccountNumber);
             }
-            if (wallet.Type == "card")
+            else if (wallet.Type == "card")
             {
                 existingAccountNumber = allWallets.FirstOrDefault(x => x.AccountNumber == Helpers.HashBankCard(wallet.AccountNumber));
             }
             if (existingAccountNumber != null)
             {
-                return BadRequest("A wallet with the this account number already exists.");
+                return BadRequest("A wallet with this account number already exists.");
             }
 
             WalletModel newWalletItem = new WalletModel();
@@ -144,8 +164,7 @@ namespace Hubtel.Wallets.Controllers
             {
                 newWalletItem.AccountNumber = wallet.AccountNumber;
             }
-
-            if (wallet.Type == "card")
+            else if (wallet.Type == "card")
             {
                 newWalletItem.AccountNumber = Helpers.HashBankCard(wallet.AccountNumber);
             }
@@ -158,9 +177,9 @@ namespace Hubtel.Wallets.Controllers
             newWalletItem.UpdatedAt = DateTimeOffset.UtcNow;
 
             _mapper.Map(newWalletItem, walletFromRepo);
-            _repository.UpdateWallet(walletFromRepo);
-            _repository.SaveChanges();
-   
+            await _repository.UpdateWalletAsync(walletFromRepo);
+            await _repository.SaveChangesAsync();
+
             return NoContent();
         }
 
@@ -171,15 +190,15 @@ namespace Hubtel.Wallets.Controllers
         /// <param name="id">The ID of the wallet to delete.</param>
         /// <returns>The deleted wallet.</returns>
         [HttpDelete("{id}")]
-        public ActionResult DeleteWalletById([FromRoute] int id)
+        public async Task<ActionResult> DeleteWalletByIdAsync([FromRoute] int id)
         {
-            var walletFromRepo = _repository.GetWalletById(id);
+            var walletFromRepo = await _repository.GetWalletByIdAsync(id);
             if (walletFromRepo == null)
             {
                 return NotFound();
             }
-            _repository.DeleteWallet(walletFromRepo);
-            _repository.SaveChanges();
+            await _repository.DeleteWalletAsync(walletFromRepo);
+            await _repository.SaveChangesAsync();
             return NoContent();
         }
 
@@ -188,17 +207,17 @@ namespace Hubtel.Wallets.Controllers
         /// Updates a wallet document partially by its ID.
         /// </summary>
         /// <param name="id">The ID of the wallet to update.</param>
-        /// <returns>No cntent.</returns>
+        /// <returns>No content.</returns>
         [HttpPatch("{id}")]
-        public ActionResult PartialUpdateOfWallet([FromRoute] int id, [FromBody] JsonPatchDocument<WalletUpdateDto> patchDoc)
+        public async Task<ActionResult> PartialUpdateOfWalletAsync([FromRoute] int id, [FromBody] JsonPatchDocument<WalletUpdateDto> patchDoc)
         {
-            var walletFromRepo = _repository.GetWalletById(id);
+            var walletFromRepo = await _repository.GetWalletByIdAsync(id);
             if (walletFromRepo == null)
             {
                 return NotFound();
             }
             var walletToPatch = _mapper.Map<WalletUpdateDto>(walletFromRepo);
-            //model state makes sure validations are valid
+            // Model state makes sure validations are valid
             patchDoc.ApplyTo(walletToPatch, ModelState);
 
             if (!TryValidateModel(walletToPatch))
@@ -206,8 +225,8 @@ namespace Hubtel.Wallets.Controllers
                 return ValidationProblem(ModelState);
             }
             _mapper.Map(walletToPatch, walletFromRepo);
-            _repository.UpdateWallet(walletFromRepo);
-            _repository.SaveChanges();
+            await _repository.UpdateWalletAsync(walletFromRepo);
+            await _repository.SaveChangesAsync();
 
             return NoContent();
         }
@@ -216,13 +235,13 @@ namespace Hubtel.Wallets.Controllers
         /// <summary>
         /// Retrieves all wallets owned by a specific owner.
         /// </summary>
-        /// <param name="owner">The owner of the wallets.</param>
+        /// <param name="ownerPhoneNumber">The owner of the wallets.</param>
         /// <returns>A collection of wallets owned by the specified owner.</returns>
         [HttpGet("owner")]
-        public ActionResult<IEnumerable<WalletReadDto>> GetAllWalletsByOwner([FromBody] string ownerPhoneNumber)
+        public async Task<ActionResult<IEnumerable<WalletReadDto>>> GetAllWalletsByOwnerAsync([FromQuery] string ownerPhoneNumber)
         {
-            var wallets = _repository.GetAllWalletsByOwner(ownerPhoneNumber).ToList();
- 
+            var wallets = await _repository.GetAllWalletsByOwnerAsync(ownerPhoneNumber);
+
             if (wallets == null)
             {
                 return NotFound();
@@ -236,15 +255,14 @@ namespace Hubtel.Wallets.Controllers
         /// </summary>
         /// <returns>A collection of all wallets.</returns>
         [HttpGet("all")]
-        public ActionResult<IEnumerable<WalletReadDto>> GetAllWalletsByAdmin()
+        public async Task<ActionResult<IEnumerable<WalletReadDto>>> GetAllWalletsByAdminAsync()
         {
-            var wallets = _repository.GetAllWalletsByAdmin().ToList();
+            var wallets = await _repository.GetAllWalletsByAdminAsync();
             if (wallets == null)
             {
                 return NotFound();
             }
             return Ok(_mapper.Map<IEnumerable<WalletReadDto>>(wallets));
-
         }
 
     }
