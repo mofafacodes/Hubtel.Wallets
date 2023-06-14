@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using FluentValidation;
+using Hubtel.Wallets.Contracts;
 using Hubtel.Wallets.Data;
 using Hubtel.Wallets.Dtos;
 using Hubtel.Wallets.Interfaces;
@@ -16,10 +17,8 @@ namespace Hubtel.Wallets.Controllers
 {
     //api/wallets
     [ApiController]
-    [Route("api/wallets")]
     public class WalletsController : ControllerBase
     {
-        //private readonly MockWalletRepo _mockWalletRepo = new MockWalletRepo();
         private readonly IWalletRepoAsync _repository;
         private readonly IMapper _mapper;
         private readonly IValidator<WalletCreateDto> _validator;
@@ -38,7 +37,7 @@ namespace Hubtel.Wallets.Controllers
         /// </summary>
         /// <param name="wallet">The wallet model to create.</param>
         /// <returns>The created wallet.</returns>
-        [HttpPost("create")]
+        [HttpPost(Routes.WalletRoutes.Create)]
         public async Task<ActionResult<WalletReadDto>> CreateWallet([FromBody] WalletCreateDto wallet)
         {
             var validateResult = await _validator.ValidateAsync(wallet);
@@ -52,7 +51,10 @@ namespace Hubtel.Wallets.Controllers
 
             if (ownerWallets.Count() >= 5)
             {
-                return BadRequest("You have a limit of 5 wallets. You cannot add additional wallets at this time.");
+                return BadRequest(new { 
+                    message = "You have a limit of 5 wallets. You cannot add additional wallets at this time.",
+                    statusCode = 400
+                });
             }
 
             if (ownerWallets.Count() > 1)
@@ -61,7 +63,10 @@ namespace Hubtel.Wallets.Controllers
                 {
                     if (item.Name != wallet.Name)
                     {
-                        return BadRequest("Wallet name should be the same for all wallets.");
+                        return BadRequest( new { 
+                            message = "Wallet name should be the same for all wallets.",
+                            statusCode = 400
+                        });
                     }
                 }
             }
@@ -80,7 +85,11 @@ namespace Hubtel.Wallets.Controllers
 
             if (existingAccountNumber != null)
             {
-                return BadRequest("A wallet with this account number already exists.");
+                return BadRequest( new
+                {
+                    message = "A wallet with this account number already exists.",
+                    statusCode = 400
+                });
             }
 
             WalletModel newWalletItem = new WalletModel();
@@ -116,7 +125,7 @@ namespace Hubtel.Wallets.Controllers
         /// </summary>
         /// <param name="id">The ID of the wallet to retrieve.</param>
         /// <returns>The wallet with the specified ID.</returns>
-        [HttpGet("{id}", Name = "GetWalletByIdAsync")]
+        [HttpGet(Routes.WalletRoutes.ById, Name = "GetWalletByIdAsync")]
         public async Task<ActionResult<WalletReadDto>> GetWalletByIdAsync([FromRoute] int id)
         {
             var wallet = await _repository.GetWalletByIdAsync(id);
@@ -134,7 +143,7 @@ namespace Hubtel.Wallets.Controllers
         /// <param name="id">The ID of the wallet to update.</param>
         /// <param name="wallet">The updated wallet data.</param>
         /// <returns>The updated wallet.</returns>
-        [HttpPut("{id}")]
+        [HttpPut(Routes.WalletRoutes.ById)]
         public async Task<ActionResult> UpdateWalletAsync([FromRoute] int id, [FromBody] WalletUpdateDto wallet)
         {
             var walletFromRepo = await _repository.GetWalletByIdAsync(id);
@@ -155,7 +164,10 @@ namespace Hubtel.Wallets.Controllers
             }
             if (existingAccountNumber != null)
             {
-                return BadRequest("A wallet with this account number already exists.");
+                return BadRequest( new { 
+                    message = "A wallet with this account number already exists.", 
+                    statusCode = 400 
+                });
             }
 
             WalletModel newWalletItem = new WalletModel();
@@ -189,7 +201,7 @@ namespace Hubtel.Wallets.Controllers
         /// </summary>
         /// <param name="id">The ID of the wallet to delete.</param>
         /// <returns>The deleted wallet.</returns>
-        [HttpDelete("{id}")]
+        [HttpDelete(Routes.WalletRoutes.ById)]
         public async Task<ActionResult> DeleteWalletByIdAsync([FromRoute] int id)
         {
             var walletFromRepo = await _repository.GetWalletByIdAsync(id);
@@ -208,7 +220,7 @@ namespace Hubtel.Wallets.Controllers
         /// </summary>
         /// <param name="id">The ID of the wallet to update.</param>
         /// <returns>No content.</returns>
-        [HttpPatch("{id}")]
+        [HttpPatch(Routes.WalletRoutes.ById)]
         public async Task<ActionResult> PartialUpdateOfWalletAsync([FromRoute] int id, [FromBody] JsonPatchDocument<WalletUpdateDto> patchDoc)
         {
             var walletFromRepo = await _repository.GetWalletByIdAsync(id);
@@ -237,7 +249,7 @@ namespace Hubtel.Wallets.Controllers
         /// </summary>
         /// <param name="ownerPhoneNumber">The owner of the wallets.</param>
         /// <returns>A collection of wallets owned by the specified owner.</returns>
-        [HttpGet("owner")]
+        [HttpGet(Routes.WalletRoutes.GetAllOwner)]
         public async Task<ActionResult<IEnumerable<WalletReadDto>>> GetAllWalletsByOwnerAsync([FromQuery] string ownerPhoneNumber)
         {
             var wallets = await _repository.GetAllWalletsByOwnerAsync(ownerPhoneNumber);
@@ -254,7 +266,7 @@ namespace Hubtel.Wallets.Controllers
         /// Retrieves all wallets (admin view).
         /// </summary>
         /// <returns>A collection of all wallets.</returns>
-        [HttpGet("all")]
+        [HttpGet(Routes.WalletRoutes.GetAllAdmin)]
         public async Task<ActionResult<IEnumerable<WalletReadDto>>> GetAllWalletsByAdminAsync()
         {
             var wallets = await _repository.GetAllWalletsByAdminAsync();
