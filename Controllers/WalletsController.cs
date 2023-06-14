@@ -44,7 +44,11 @@ namespace Hubtel.Wallets.Controllers
 
             if (!validateResult.IsValid)
             {
-                return BadRequest(validateResult.Errors);
+                return BadRequest( new { 
+                    message = "Validation failed",
+                    errors = validateResult.Errors,
+                    statusCode = 400
+                });
             }
 
             var ownerWallets = await _repository.GetAllWalletsByOwnerAsync(wallet.OwnerPhoneNumber);
